@@ -1,0 +1,9 @@
+.uv
+.venv
+.ruff_cache
+
+.env
+.env.local
+.env.production
+
+
