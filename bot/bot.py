@@ -13,6 +13,8 @@ from pydantic import BaseModel, EmailStr, ValidationError
 import time
 from upstash_redis.asyncio import Redis
 from upstash_ratelimit.asyncio import Ratelimit, FixedWindow
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 
 # Load environment variables
 load_dotenv()
@@ -58,6 +60,7 @@ class VerifyBot(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
         intents.members = True
+        intents.message_content = True
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
 
@@ -233,16 +236,6 @@ async def on_ready():
     logger.info(f"Logged in as {discord_client.user}")
 
 
-async def main():
-    try:
-        async with discord_client:
-            await discord_client.start(DISCORD_TOKEN)
-    except Exception as e:
-        logger.error(f"Error in main: {str(e)}")
-        await cleanup()
-        sys.exit(1)
-
-
 def signal_handler(sig, frame):
     logger.info(f"Received shutdown signal ({sig}), cleaning up...")
     asyncio.create_task(cleanup())
@@ -258,18 +251,59 @@ async def cleanup():
     logger.info("Cleanup complete, exiting...")
 
 
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+
+def start_health_check_server():
+    port = int(os.getenv("PORT", 8000))
+    server_address = ("", port)
+    httpd = HTTPServer(server_address, HealthCheckHandler)
+    logger.info(f"Starting health check server on port {port}")
+    # httpd.serve_forever()
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+
+async def main():
+    try:
+        start_health_check_server()
+        logger.info("Starting health check server started")
+    except Exception as e:
+        logger.error(f"Failed to start health check server: {str(e)}")
+        await cleanup()
+        sys.exit(1)
+
+    try:
+        async with discord_client:
+            await discord_client.start(DISCORD_TOKEN)
+    except discord.LoginFailure:
+        logger.error("Invalid token provided")
+        await cleanup()
+        sys.exit(1)
+    except discord.HTTPException as e:
+        logger.error(f"HTTP error occurred: {str(e)}")
+        await cleanup()
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error in main: {str(e)}")
+        await cleanup()
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     start_time = time.time()
     total_sent = 0
     total_failed = 0
 
-    loop = asyncio.get_event_loop()
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, signal_handler, sig, None)
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGQUIT):
+        signal.signal(sig, signal_handler)
 
     try:
-        loop.run_until_complete(main())
+        asyncio.run(main())
     except KeyboardInterrupt:
         logger.error("Interrupted by user")
     except Exception as e:
@@ -277,6 +311,5 @@ if __name__ == "__main__":
     finally:
         duration = time.time() - start_time
         monitor_email_sending(total_sent, total_failed, duration)
-        loop.run_until_complete(cleanup())
-        loop.close()
+        asyncio.run(cleanup())
         sys.exit(0)
