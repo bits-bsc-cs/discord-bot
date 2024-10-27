@@ -73,7 +73,7 @@ resource "google_cloud_run_service" "discord_bot" {
         }
         env {
           name  = "UPSTASH_REDIS_REST_URL"
-          value = upstash_redis_database.redis-db.endpoint
+          value = "https://${upstash_redis_database.redis-db.endpoint}"
         }
         env {
           name  = "UPSTASH_REDIS_REST_TOKEN"
