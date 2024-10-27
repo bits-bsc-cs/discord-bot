@@ -16,7 +16,7 @@ from upstash_ratelimit.asyncio import Ratelimit, FixedWindow
 
 # Load environment variables
 load_dotenv()
-TOKEN = os.getenv("DISCORD_TOKEN")
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 resend.api_key = os.getenv("RESEND_API_KEY")
 UPSTASH_REDIS_REST_URL = os.getenv("UPSTASH_REDIS_REST_URL")
 UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
@@ -65,7 +65,7 @@ class VerifyBot(discord.Client):
         await self.tree.sync()
 
 
-client = VerifyBot()
+discord_client = VerifyBot()
 
 
 async def rate_limit_user(user_id: str):
@@ -203,7 +203,7 @@ class CodeModal(Modal):
         )
 
 
-@client.tree.command()
+@discord_client.tree.command()
 async def verify(interaction: discord.Interaction):
     """Start the verification process"""
     try:
@@ -228,25 +228,33 @@ async def verify(interaction: discord.Interaction):
         )
 
 
-@client.event
+@discord_client.event
 async def on_ready():
-    logger.info(f"Logged in as {client.user}")
+    logger.info(f"Logged in as {discord_client.user}")
 
 
 async def main():
-    async with client:
-        await client.start(TOKEN)
+    try:
+        async with discord_client:
+            await discord_client.start(DISCORD_TOKEN)
+    except Exception as e:
+        logger.error(f"Error in main: {str(e)}")
+        await cleanup()
+        sys.exit(1)
 
 
 def signal_handler(sig, frame):
-    logger.info("Received shutdown signal, cleaning up...")
+    logger.info(f"Received shutdown signal ({sig}), cleaning up...")
     asyncio.create_task(cleanup())
 
 
 async def cleanup():
     logger.info("Performing cleanup...")
-    await client.close()
-    await redis_client.close()
+    try:
+        await discord_client.close()
+        await redis_client.close()
+    except Exception as e:
+        logger.error(f"Error during cleanup: {str(e)}")
     logger.info("Cleanup complete, exiting...")
 
 
@@ -258,12 +266,14 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(cleanup()))
+        loop.add_signal_handler(sig, signal_handler, sig, None)
 
     try:
         loop.run_until_complete(main())
     except KeyboardInterrupt:
-        logger.error("Interrupted")
+        logger.error("Interrupted by user")
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
     finally:
         duration = time.time() - start_time
         monitor_email_sending(total_sent, total_failed, duration)
