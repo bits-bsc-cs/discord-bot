@@ -20,5 +20,4 @@ export TF_VAR_docker_image=gcr.io/$PROJECT_ID/discord-bot:latest
 # Initialize and apply Terraform
 cd infra
 terraform init
-# terraform apply -auto-approve
-terraform apply
+terraform apply -auto-approve
