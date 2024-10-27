@@ -24,9 +24,12 @@ services:
       - UPSTASH_REDIS_REST_TOKEN=upstash_token
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - RESEND_API_KEY=${RESEND_API_KEY}
+    ports:
+      - "8000:8080"
     depends_on:
       - redis-rest
-
+    
+ 
 networks:
   default:
     name: discord-bot-network
