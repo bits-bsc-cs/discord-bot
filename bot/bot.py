@@ -2,7 +2,6 @@ import signal
 import sys
 import asyncio
 import os
-from typing import Union
 import discord
 from discord import app_commands
 from discord.ui import TextInput, Modal, View, Button
