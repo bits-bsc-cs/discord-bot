@@ -5,7 +5,7 @@ import os
 from typing import Union
 import discord
 from discord import app_commands
-from discord.ui import TextInput, Modal
+from discord.ui import TextInput, Modal, View, Button
 import random
 from dotenv import load_dotenv
 import resend
@@ -69,7 +69,7 @@ class EmailModal(Modal):
         super().__init__(title="BITS Pilani Email Verification")
         self.email = TextInput(
             label="Enter your BITS Pilani student email",
-            placeholder=f"f20XXXXX{EMAIL_DOMAIN}",
+            placeholder=f"2023XXXXX{EMAIL_DOMAIN}",
             required=True,
         )
         self.add_item(self.email)
@@ -78,6 +78,14 @@ class EmailModal(Modal):
         await interaction.response.defer(ephemeral=True)
 
         try:
+            # if already has verified role then return
+            verified_role = discord.utils.get(interaction.guild.roles, name="Verified")
+            if verified_role in interaction.user.roles:
+                await interaction.followup.send(
+                    "You are already verified!", ephemeral=True
+                )
+                return
+
             if not await rate_limit_user(interaction.user.id):
                 raise ValueError("Rate limit exceeded. Please try again later.")
 
@@ -108,8 +116,12 @@ class EmailModal(Modal):
             )
 
             await interaction.followup.send(
-                f"A verification code has been sent to {email_input.email}. Please use `/verify` again to enter the code.",
+                f"A verification code has been sent to **{email_input.email}**. Please use `/verify` again to enter the code or click the button below.\nNOTE: The code will expire in **10 minutes**.",
                 ephemeral=True,
+            )
+
+            await interaction.followup.send(
+                view=VerifyView(email=False), ephemeral=True
             )
 
         except ValidationError as e:
@@ -141,6 +153,13 @@ class CodeModal(Modal):
         await interaction.response.defer(ephemeral=True)
 
         try:
+            verified_role = discord.utils.get(interaction.guild.roles, name="Verified")
+            if verified_role in interaction.user.roles:
+                await interaction.followup.send(
+                    "You are already verified!", ephemeral=True
+                )
+                return
+
             stored_data = await redis_client.get(f"verify:{interaction.user.id}")
             if not stored_data:
                 raise ValueError("Verification code expired or not found")
@@ -186,33 +205,62 @@ class VerifyBot(discord.Client):
 discord_client = VerifyBot()
 
 
+class VerifyView(View):
+    def __init__(self, email=True, code=True):
+        super().__init__()
+        if email:
+            self.add_item(
+                Button(
+                    label="Enter Email",
+                    custom_id="email_button",
+                    style=discord.ButtonStyle.primary,
+                )
+            )
+        if code:
+            self.add_item(
+                Button(
+                    label="Enter Code",
+                    custom_id="code_button",
+                    style=discord.ButtonStyle.secondary
+                    if email
+                    else discord.ButtonStyle.primary,
+                )
+            )
+
+
 @discord_client.tree.command()
 async def verify(interaction: discord.Interaction):
     """Start the verification process"""
+    await interaction.response.defer(ephemeral=True)
     try:
         verified_role = discord.utils.get(interaction.guild.roles, name="Verified")
         if verified_role in interaction.user.roles:
-            await interaction.response.send_message(
-                "You are already verified!", ephemeral=True
-            )
+            await interaction.followup.send("You are already verified!", ephemeral=True)
             return
 
-        modal = await get_appropriate_modal(interaction.user.id)
-        await interaction.response.send_modal(modal)
+        view = VerifyView()
+        await interaction.followup.send(
+            "Hi! To access the unlocked channels, you need to get verified.\nChoose an option below to start the verification process:",
+            view=view,
+            ephemeral=True,
+        )
 
     except discord.errors.NotFound:
         logger.error("Unknown interaction error occurred in verify command")
     except Exception as e:
         logger.error(f"Error in verify command: {str(e)}")
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "An error occurred. Please try again later.", ephemeral=True
         )
 
 
-async def get_appropriate_modal(user_id: int) -> Union[EmailModal, CodeModal]:
-    return (
-        CodeModal() if await redis_client.exists(f"verify:{user_id}") else EmailModal()
-    )
+@discord_client.event
+async def on_interaction(interaction: discord.Interaction):
+    if interaction.type == discord.InteractionType.component:
+        if interaction.data["custom_id"] == "email_button":
+            await interaction.response.send_modal(EmailModal())
+        elif interaction.data["custom_id"] == "code_button":
+            await interaction.response.send_modal(CodeModal())
 
 
 @discord_client.event
