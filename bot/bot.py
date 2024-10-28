@@ -284,12 +284,40 @@ async def main():
         sys.exit(1)
 
 
+async def cleanup():
+    logger.info("Performing cleanup...")
+    try:
+        await discord_client.close()
+        await redis_client.close()
+    except Exception as e:
+        logger.error(f"Error during cleanup: {str(e)}")
+    logger.info("Cleanup complete, exiting...")
+
+
+def monitor_email_sending(total_sent, total_failed, duration):
+    logger.info(
+        f"Email Sending Metrics: Total Sent: {total_sent}, Total Failed: {total_failed}, Duration: {duration:.2f} seconds"
+    )
+
+
+def signal_handler(sig, _):
+    logger.info(f"Received shutdown signal ({sig}), cleaning up...")
+    asyncio.create_task(cleanup())
+
+
 if __name__ == "__main__":
     start_time = time.time()
     total_sent = 0
     total_failed = 0
 
-    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGQUIT):
+    for sig in (
+        signal.SIGINT,
+        signal.SIGTERM,
+        signal.SIGQUIT,
+        signal.SIGHUP,
+        signal.SIGUSR1,
+        signal.SIGUSR2,
+    ):
         signal.signal(sig, signal_handler)
 
     try:
