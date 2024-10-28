@@ -2,6 +2,7 @@ import signal
 import sys
 import asyncio
 import os
+from typing import Union
 import discord
 from discord import app_commands
 from discord.ui import TextInput, Modal
@@ -49,12 +50,125 @@ ratelimit = Ratelimit(
 )
 
 
+async def rate_limit_user(user_id: str):
+    identifier = f"user:{user_id}"
+    result = await ratelimit.limit(identifier)
+    return result.allowed
+
+
 class EmailInput(BaseModel):
     email: EmailStr
 
     @property
     def is_valid_bits_email(self):
         return self.email.endswith(EMAIL_DOMAIN)
+
+
+class EmailModal(Modal):
+    def __init__(self):
+        super().__init__(title="BITS Pilani Email Verification")
+        self.email = TextInput(
+            label="Enter your BITS Pilani student email",
+            placeholder=f"f20XXXXX{EMAIL_DOMAIN}",
+            required=True,
+        )
+        self.add_item(self.email)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            if not await rate_limit_user(interaction.user.id):
+                raise ValueError("Rate limit exceeded. Please try again later.")
+
+            email_input = EmailInput(email=self.email.value)
+            if not email_input.is_valid_bits_email:
+                raise ValueError("Enter a valid BITS Pilani student email.")
+
+            verification_code = "".join(
+                random.choices("0123456789", k=VERIFICATION_CODE_LENGTH)
+            )
+
+            email_params = {
+                "from": f"BITS Discord Bot <{BOT_EMAIL}>",
+                "to": [email_input.email],
+                "subject": "Discord Verification Code",
+                "html": f"Your verification code is: <strong>{verification_code}</strong>",
+            }
+
+            if not resend.Emails.send(email_params):
+                raise ValueError(
+                    "Failed to send verification email. Please try again later."
+                )
+
+            await redis_client.set(
+                f"verify:{interaction.user.id}",
+                f"{verification_code}:{email_input.email}",
+                ex=VERIFICATION_CODE_EXPIRY,
+            )
+
+            await interaction.followup.send(
+                f"A verification code has been sent to {email_input.email}. Please use `/verify` again to enter the code.",
+                ephemeral=True,
+            )
+
+        except ValidationError as e:
+            await interaction.followup.send("Enter a valid email.", ephemeral=True)
+            logger.error(f"Validation error in EmailModal: {str(e)}")
+        except ValueError as e:
+            await interaction.followup.send(str(e), ephemeral=True)
+            logger.error(f"Error in EmailModal: {str(e)}")
+        except Exception as e:
+            await interaction.followup.send(
+                "An unexpected error occurred. Please try again later.", ephemeral=True
+            )
+            logger.error(f"Unexpected error in EmailModal: {str(e)}")
+
+
+class CodeModal(Modal):
+    def __init__(self):
+        super().__init__(title="Code Verification")
+        self.code = TextInput(
+            label="Enter the verification code",
+            placeholder="123456",
+            required=True,
+            min_length=VERIFICATION_CODE_LENGTH,
+            max_length=VERIFICATION_CODE_LENGTH,
+        )
+        self.add_item(self.code)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            stored_data = await redis_client.get(f"verify:{interaction.user.id}")
+            if not stored_data:
+                raise ValueError("Verification code expired or not found")
+
+            correct_code, _ = stored_data.split(":")
+            if self.code.value != correct_code:
+                raise ValueError("Incorrect verification code")
+
+            verified_role = discord.utils.get(interaction.guild.roles, name="Verified")
+            if not verified_role:
+                raise ValueError("Verified role not found")
+
+            await interaction.user.add_roles(verified_role)
+            await redis_client.delete(f"verify:{interaction.user.id}")
+
+            await interaction.followup.send(
+                "Verification successful! You have been given the Verified role.",
+                ephemeral=True,
+            )
+
+        except ValueError as e:
+            await interaction.followup.send(str(e), ephemeral=True)
+            logger.error(f"Code verification error: {str(e)}")
+        except Exception as e:
+            await interaction.followup.send(
+                "An unexpected error occurred. Please try again later.", ephemeral=True
+            )
+            logger.error(f"Unexpected error in CodeModal: {str(e)}")
 
 
 class VerifyBot(discord.Client):
@@ -72,141 +186,6 @@ class VerifyBot(discord.Client):
 discord_client = VerifyBot()
 
 
-async def rate_limit_user(user_id: str):
-    identifier = f"user:{user_id}"
-    result = await ratelimit.limit(identifier)
-    return result.allowed
-
-
-def monitor_email_sending(total_sent, total_failed, duration):
-    logger.info(
-        f"Email Sending Metrics: Total Sent: {total_sent}, Total Failed: {total_failed}, Duration: {duration:.2f} seconds"
-    )
-
-
-class EmailModal(Modal):
-    def __init__(self):
-        super().__init__(title="BITS Pilani Email Verification")
-        self.email = TextInput(
-            label="Enter your BITS Pilani student email",
-            placeholder=f"f20XXXXX{EMAIL_DOMAIN}",
-            required=True,
-        )
-        self.add_item(self.email)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        async def send_error_message(message: str):
-            logger.error(message)
-            await interaction.response.send_message(message, ephemeral=True)
-
-        # Check rate limit
-        if not await rate_limit_user(interaction.user.id):
-            await send_error_message("Rate limit exceeded. Please try again later.")
-            return
-
-        # Validate email
-        try:
-            email_input = EmailInput(email=self.email.value)
-        except ValidationError:
-            await send_error_message("Please enter a valid email address.")
-            return
-
-        if not email_input.is_valid_bits_email:
-            await send_error_message("Invalid BITS Pilani email")
-            return
-
-        # Generate verification code
-        verification_code = "".join(
-            str(random.randint(0, 9)) for _ in range(VERIFICATION_CODE_LENGTH)
-        )
-
-        # Send email
-        params = {
-            "from": f"BITS Discord Bot <{BOT_EMAIL}>",
-            "to": [email_input.email],
-            "subject": "Discord Verification Code",
-            "html": f"Your verification code is: <strong>{verification_code}</strong>",
-        }
-
-        email_result = resend.Emails.send(params)
-        if not email_result:
-            await send_error_message(
-                "Failed to send verification email. Please try again later."
-            )
-            return
-
-        # Store verification code
-        try:
-            await redis_client.set(
-                key=f"verify:{interaction.user.id}",
-                value=f"{verification_code}:{email_input.email}",
-                ex=VERIFICATION_CODE_EXPIRY,
-            )
-        except Exception:
-            await send_error_message(
-                "Failed to store verification code. Please try again."
-            )
-            return
-
-        # Send success message
-        await interaction.response.send_message(
-            f"A verification code has been sent to {email_input.email}. Please use `/verify` again to enter the code.",
-            ephemeral=True,
-        )
-
-
-class CodeModal(Modal):
-    def __init__(self):
-        super().__init__(title="Code Verification")
-        self.code = TextInput(
-            label="Enter the verification code", placeholder="123456", required=True
-        )
-        self.add_item(self.code)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        async def send_error_message(message: str):
-            logger.error(f"Code verification error: {message}")
-            await interaction.response.send_message(message, ephemeral=True)
-
-        # Get stored verification data
-        stored_data = await redis_client.get(f"verify:{interaction.user.id}")
-        if not stored_data:
-            await send_error_message("Verification code expired or not found")
-            return
-
-        # Verify code
-        entered_code = self.code.value
-        try:
-            correct_code, _ = stored_data.split(":")
-        except Exception:
-            await send_error_message("Invalid verification data stored")
-            return
-
-        if entered_code != correct_code:
-            await send_error_message("Incorrect verification code")
-            return
-
-        # Get verified role
-        verified_role = discord.utils.get(interaction.guild.roles, name="Verified")
-        if not verified_role:
-            await send_error_message("Verified role not found")
-            return
-
-        # Assign role and cleanup
-        try:
-            await interaction.user.add_roles(verified_role)
-            await redis_client.delete(f"verify:{interaction.user.id}")
-        except Exception:
-            await send_error_message("Failed to assign verified role")
-            return
-
-        # Send success message
-        await interaction.response.send_message(
-            "Verification successful! You have been given the Verified role.",
-            ephemeral=True,
-        )
-
-
 @discord_client.tree.command()
 async def verify(interaction: discord.Interaction):
     """Start the verification process"""
@@ -218,18 +197,22 @@ async def verify(interaction: discord.Interaction):
             )
             return
 
-        if await redis_client.exists(f"verify:{interaction.user.id}"):
-            modal = CodeModal()
-        else:
-            modal = EmailModal()
-
+        modal = await get_appropriate_modal(interaction.user.id)
         await interaction.response.send_modal(modal)
 
+    except discord.errors.NotFound:
+        logger.error("Unknown interaction error occurred in verify command")
     except Exception as e:
         logger.error(f"Error in verify command: {str(e)}")
         await interaction.response.send_message(
             "An error occurred. Please try again later.", ephemeral=True
         )
+
+
+async def get_appropriate_modal(user_id: int) -> Union[EmailModal, CodeModal]:
+    return (
+        CodeModal() if await redis_client.exists(f"verify:{user_id}") else EmailModal()
+    )
 
 
 @discord_client.event
