@@ -1,0 +1,35 @@
+services:
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  redis-rest:
+    image: hiett/serverless-redis-http:latest
+    environment:
+      - SRH_MODE=env
+      - SRH_TOKEN=upstash_token
+      - SRH_CONNECTION_STRING=redis://redis:6379
+    ports:
+      - "8080:80"
+    depends_on:
+      - redis
+
+  discord-bot:
+    build:
+      context: ./bot/.
+      dockerfile: Dockerfile
+    environment:
+      - UPSTASH_REDIS_REST_URL=http://redis-rest:80
+      - UPSTASH_REDIS_REST_TOKEN=upstash_token
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+    ports:
+      - "8000:8080"
+    depends_on:
+      - redis-rest
+    
+ 
+networks:
+  default:
+    name: discord-bot-network
