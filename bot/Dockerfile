@@ -32,4 +32,4 @@ RUN python -m compileall .
 EXPOSE 8080
 
 # Set the command to run the application
-CMD ["uv", "run", "bot.py"]
+CMD ["python", "bot.py"]
