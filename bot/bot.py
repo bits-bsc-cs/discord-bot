@@ -22,6 +22,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 resend.api_key = os.getenv("RESEND_API_KEY")
 UPSTASH_REDIS_REST_URL = os.getenv("UPSTASH_REDIS_REST_URL")
 UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
+HEALTHCHECK_PORT = int(os.getenv("PORT", 8000))
 
 # Constants
 VERIFICATION_CODE_LENGTH = 6
@@ -260,11 +261,9 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
 
 def start_health_check_server():
-    port = int(os.getenv("PORT", 8000))
-    server_address = ("", port)
+    server_address = ("", HEALTHCHECK_PORT)
     httpd = HTTPServer(server_address, HealthCheckHandler)
-    logger.info(f"Starting health check server on port {port}")
-    # httpd.serve_forever()
+    logger.info(f"Starting health check server on port {HEALTHCHECK_PORT}")
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
 
