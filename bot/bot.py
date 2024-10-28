@@ -220,19 +220,27 @@ async def on_ready():
     logger.info(f"Logged in as {discord_client.user}")
 
 
-def signal_handler(sig, frame):
-    logger.info(f"Received shutdown signal ({sig}), cleaning up...")
-    asyncio.create_task(cleanup())
-
-
-async def cleanup():
-    logger.info("Performing cleanup...")
-    try:
-        await discord_client.close()
-        await redis_client.close()
-    except Exception as e:
-        logger.error(f"Error during cleanup: {str(e)}")
-    logger.info("Cleanup complete, exiting...")
+# Error handler for application command errors
+@discord_client.tree.error
+async def on_app_command_error(
+    interaction: discord.Interaction, error: app_commands.AppCommandError
+):
+    if isinstance(error, app_commands.CommandOnCooldown):
+        await interaction.response.send_message(
+            f"This command is on cooldown. Try again in {error.retry_after:.2f} seconds.",
+            ephemeral=True,
+        )
+    elif isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message(
+            "You don't have the required permissions to use this command.",
+            ephemeral=True,
+        )
+    else:
+        logger.error(f"Unhandled application command error: {str(error)}")
+        await interaction.response.send_message(
+            "An error occurred while processing the command. Please try again later.",
+            ephemeral=True,
+        )
 
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
