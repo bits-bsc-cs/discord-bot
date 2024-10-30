@@ -115,7 +115,7 @@ class EmailModal(Modal):
             )
 
             await interaction.followup.send(
-                f"An OTP has been sent to **{email_input.email}**. \nNOTE: The code will expire in **10 minutes**. \nIf Enter Code Button doesn't appear use `/verify` again",
+                f"An OTP has been sent to **{email_input.email}**. \nNOTE: The code will expire in **10 minutes**. \nIf Enter OTP Button doesn't appear use `/verify` again",
                 ephemeral=True,
             )
 
@@ -136,9 +136,13 @@ class EmailModal(Modal):
             logger.error(f"Unexpected error in EmailModal: {str(e)}")
 
 
-class CodeModal(Modal):
+class OTPModal(Modal):
+    """
+    Modal dialog for OTP entry.
+    Handles the verification process including role management and Redis operations.
+    """
     def __init__(self):
-        super().__init__(title="Code Verification")
+        super().__init__(title="OTP Verification")
         self.code = TextInput(
             label="Enter the OTP",
             placeholder="xxxxxx",
@@ -152,13 +156,15 @@ class CodeModal(Modal):
         await interaction.response.defer(ephemeral=True)
 
         try:
+            # Check if user is already verified
             verified_role = discord.utils.get(interaction.guild.roles, name="Verified")
             if verified_role in interaction.user.roles:
                 await interaction.followup.send(
                     "You are already verified!", ephemeral=True
                 )
                 return
-
+            
+            # Validate OTP from Redis
             stored_data = await redis_client.get(f"verify:{interaction.user.id}")
             if not stored_data:
                 raise ValueError("OTP expired or not found")
@@ -167,26 +173,38 @@ class CodeModal(Modal):
             if self.code.value != correct_code:
                 raise ValueError("Incorrect OTP")
 
+            # Add Verified Role
             verified_role = discord.utils.get(interaction.guild.roles, name="Verified")
             if not verified_role:
                 raise ValueError("@Verified role not found")
 
             await interaction.user.add_roles(verified_role)
-            await redis_client.delete(f"verify:{interaction.user.id}")
+            
+            # Remove UnVerified Role
+            unverified_role = discord.utils.get(interaction.guild.roles, name="UnVerified")
 
+            if not unverified_role:
+                raise ValueError("@UnVerified role not found")
+
+            await interaction.user.remove_roles(unverified_role)
+
+            # Cleanup and Success Message
+            await redis_client.delete(f"verify:{interaction.user.id}")
             await interaction.followup.send(
                 "Verification successful! You have been given the Verified role.",
                 ephemeral=True,
             )
 
         except ValueError as e:
+            # Handle validation errors
             await interaction.followup.send(str(e), ephemeral=True)
             logger.error(f"OTP verification error: {str(e)}")
         except Exception as e:
+            # Handle unexpected errors
             await interaction.followup.send(
                 "An unexpected error occurred. Please try again later.", ephemeral=True
             )
-            logger.error(f"Unexpected error in CodeModal: {str(e)}")
+            logger.error(f"Unexpected error in OTPModal: {str(e)}")
 
 
 class VerifyBot(discord.Client):
@@ -259,7 +277,7 @@ async def on_interaction(interaction: discord.Interaction):
         if interaction.data["custom_id"] == "email_button":
             await interaction.response.send_modal(EmailModal())
         elif interaction.data["custom_id"] == "otp_button":
-            await interaction.response.send_modal(CodeModal())
+            await interaction.response.send_modal(OTPModal())
 
 
 @discord_client.event
