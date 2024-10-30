@@ -92,7 +92,7 @@ class EmailModal(Modal):
             if not email_input.is_valid_bits_email:
                 raise ValueError("Enter a valid BITS Pilani student email.")
 
-            verification_code = "".join(
+            OTP = "".join(
                 random.choices("0123456789", k=OTP_LENGTH)
             )
 
@@ -100,7 +100,7 @@ class EmailModal(Modal):
                 "from": f"BITS Discord Bot <{BOT_EMAIL}>",
                 "to": [email_input.email],
                 "subject": "Discord Email Verification OTP",
-                "html": f"Your OTP is: <strong>{verification_code}</strong>",
+                "html": f"Your OTP is: <strong>{OTP}</strong>",
             }
 
             if not resend.Emails.send(email_params):
@@ -110,7 +110,7 @@ class EmailModal(Modal):
 
             await redis_client.set(
                 f"verify:{interaction.user.id}",
-                f"{verification_code}:{email_input.email}",
+                f"{OTP}:{email_input.email}",
                 ex=OTP_EXPIRY,
             )
 
