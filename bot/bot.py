@@ -173,6 +173,14 @@ class OTPModal(Modal):
             if self.code.value != correct_code:
                 raise ValueError("Incorrect OTP")
 
+            # Remove UnVerified Role
+            unverified_role = discord.utils.get(interaction.guild.roles, name="UnVerified")
+
+            if not unverified_role:
+                raise ValueError("@UnVerified role not found")
+
+            await interaction.user.remove_roles(unverified_role)
+            
             # Add Verified Role
             verified_role = discord.utils.get(interaction.guild.roles, name="Verified")
             if not verified_role:
