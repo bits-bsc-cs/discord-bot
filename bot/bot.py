@@ -25,10 +25,10 @@ UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
 HEALTHCHECK_PORT = int(os.getenv("PORT", 8000))
 
 # Constants
-VERIFICATION_CODE_LENGTH = 6
+OTP_LENGTH = 6
 RATE_LIMIT_MAX_REQUESTS = 5
 RATE_LIMIT_WINDOW = 600  # 10 minutes
-VERIFICATION_CODE_EXPIRY = 600  # 10 minutes
+OTP_EXPIRY = 600  # 10 minutes
 EMAIL_DOMAIN = "@online.bits-pilani.ac.in"
 BOT_EMAIL = "noreply@bits-bot.sattwyk.com"
 
@@ -68,7 +68,7 @@ class EmailModal(Modal):
         super().__init__(title="BITS Pilani Email Verification")
         self.email = TextInput(
             label="Enter your BITS Pilani student email",
-            placeholder=f"2023XXXXX{EMAIL_DOMAIN}",
+            placeholder=f"202XXXXXX{EMAIL_DOMAIN}",
             required=True,
         )
         self.add_item(self.email)
@@ -93,29 +93,29 @@ class EmailModal(Modal):
                 raise ValueError("Enter a valid BITS Pilani student email.")
 
             verification_code = "".join(
-                random.choices("0123456789", k=VERIFICATION_CODE_LENGTH)
+                random.choices("0123456789", k=OTP_LENGTH)
             )
 
             email_params = {
                 "from": f"BITS Discord Bot <{BOT_EMAIL}>",
                 "to": [email_input.email],
-                "subject": "Discord Verification Code",
-                "html": f"Your verification code is: <strong>{verification_code}</strong>",
+                "subject": "Discord Email Verification OTP",
+                "html": f"Your OTP is: <strong>{verification_code}</strong>",
             }
 
             if not resend.Emails.send(email_params):
                 raise ValueError(
-                    "Failed to send verification email. Please try again later."
+                    "Failed to send the OTP. Please try again later."
                 )
 
             await redis_client.set(
                 f"verify:{interaction.user.id}",
                 f"{verification_code}:{email_input.email}",
-                ex=VERIFICATION_CODE_EXPIRY,
+                ex=OTP_EXPIRY,
             )
 
             await interaction.followup.send(
-                f"A verification code has been sent to **{email_input.email}**. Please use `/verify` again to enter the code or click the button below.\nNOTE: The code will expire in **10 minutes**.",
+                f"An OTP has been sent to **{email_input.email}**. \nNOTE: The code will expire in **10 minutes**. \nIf Enter Code Button doesn't appear use `/verify` again",
                 ephemeral=True,
             )
 
@@ -140,11 +140,11 @@ class CodeModal(Modal):
     def __init__(self):
         super().__init__(title="Code Verification")
         self.code = TextInput(
-            label="Enter the verification code",
-            placeholder="123456",
+            label="Enter the OTP",
+            placeholder="xxxxxx",
             required=True,
-            min_length=VERIFICATION_CODE_LENGTH,
-            max_length=VERIFICATION_CODE_LENGTH,
+            min_length=OTP_LENGTH,
+            max_length=OTP_LENGTH,
         )
         self.add_item(self.code)
 
@@ -161,15 +161,15 @@ class CodeModal(Modal):
 
             stored_data = await redis_client.get(f"verify:{interaction.user.id}")
             if not stored_data:
-                raise ValueError("Verification code expired or not found")
+                raise ValueError("OTP expired or not found")
 
             correct_code, _ = stored_data.split(":")
             if self.code.value != correct_code:
-                raise ValueError("Incorrect verification code")
+                raise ValueError("Incorrect OTP")
 
             verified_role = discord.utils.get(interaction.guild.roles, name="Verified")
             if not verified_role:
-                raise ValueError("Verified role not found")
+                raise ValueError("@Verified role not found")
 
             await interaction.user.add_roles(verified_role)
             await redis_client.delete(f"verify:{interaction.user.id}")
@@ -181,7 +181,7 @@ class CodeModal(Modal):
 
         except ValueError as e:
             await interaction.followup.send(str(e), ephemeral=True)
-            logger.error(f"Code verification error: {str(e)}")
+            logger.error(f"OTP verification error: {str(e)}")
         except Exception as e:
             await interaction.followup.send(
                 "An unexpected error occurred. Please try again later.", ephemeral=True
@@ -218,8 +218,8 @@ class VerifyView(View):
         if code:
             self.add_item(
                 Button(
-                    label="Enter Code",
-                    custom_id="code_button",
+                    label="Enter OTP",
+                    custom_id="otp_button",
                     style=discord.ButtonStyle.secondary
                     if email
                     else discord.ButtonStyle.primary,
@@ -239,7 +239,7 @@ async def verify(interaction: discord.Interaction):
 
         view = VerifyView()
         await interaction.followup.send(
-            "Hi! To access the unlocked channels, you need to get verified.\nChoose an option below to start the verification process:",
+            "Hey There!\nChoose an option below to start the verification process:",
             view=view,
             ephemeral=True,
         )
@@ -258,7 +258,7 @@ async def on_interaction(interaction: discord.Interaction):
     if interaction.type == discord.InteractionType.component:
         if interaction.data["custom_id"] == "email_button":
             await interaction.response.send_modal(EmailModal())
-        elif interaction.data["custom_id"] == "code_button":
+        elif interaction.data["custom_id"] == "otp_button":
             await interaction.response.send_modal(CodeModal())
 
 
