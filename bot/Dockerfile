@@ -1,7 +1,7 @@
 # Use the official Python image as the base image
 FROM python:3.10-slim-bookworm AS base
 
-# Install uv
+# Copy uv binaries
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Set environment variables
@@ -15,17 +15,17 @@ ENV PORT=8080
 # Set the working directory
 WORKDIR /app
 
-# Copy only the necessary files for dependency installation
+# Copy dependency files for installation
 COPY pyproject.toml uv.lock ./
 
 # Install dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r pyproject.toml
 
-# Copy the rest of the application code
+# Copy the main application file
 COPY bot.py ./
 
-# Compile bytecode
+# Compile bytecode (this step might be redundant if UV_COMPILE_BYTECODE is set)
 RUN python -m compileall .
 
 # Expose the port the app runs on
