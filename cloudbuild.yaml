@@ -27,9 +27,12 @@ steps:
       - '--image'
       - 'gcr.io/$PROJECT_ID/discord-bot:$COMMIT_SHA'
       - '--region'
-      - 'us-central1'
+      - 'asia-south1'
       - '--platform'
       - 'managed'
 
 images:
   - 'gcr.io/$PROJECT_ID/discord-bot:$COMMIT_SHA'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
