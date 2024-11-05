@@ -1,0 +1,35 @@
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/discord-bot:$COMMIT_SHA'
+      - '-f'
+      - 'bot/Dockerfile'
+      - 'bot'
+    env:
+      - 'DOCKER_BUILDKIT=1'
+
+  # Push the image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/discord-bot:$COMMIT_SHA'
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'discord-bot'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/discord-bot:$COMMIT_SHA'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+
+images:
+  - 'gcr.io/$PROJECT_ID/discord-bot:$COMMIT_SHA'
