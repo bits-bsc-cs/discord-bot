@@ -22,7 +22,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 resend.api_key = os.getenv("RESEND_API_KEY")
 UPSTASH_REDIS_REST_URL = os.getenv("UPSTASH_REDIS_REST_URL")
 UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
-HEALTHCHECK_PORT = int(os.getenv("PORT", 8000))
+HEALTHCHECK_PORT = int(os.getenv("PORT", 8080))
 
 # Constants
 OTP_LENGTH = 6
