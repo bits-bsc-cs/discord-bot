@@ -92,9 +92,7 @@ class EmailModal(Modal):
             if not email_input.is_valid_bits_email:
                 raise ValueError("Enter a valid BITS Pilani student email.")
 
-            OTP = "".join(
-                random.choices("0123456789", k=OTP_LENGTH)
-            )
+            OTP = "".join(random.choices("0123456789", k=OTP_LENGTH))
 
             email_params = {
                 "from": f"BITS Discord Bot <{BOT_EMAIL}>",
@@ -104,9 +102,7 @@ class EmailModal(Modal):
             }
 
             if not resend.Emails.send(email_params):
-                raise ValueError(
-                    "Failed to send the OTP. Please try again later."
-                )
+                raise ValueError("Failed to send the OTP. Please try again later.")
 
             await redis_client.set(
                 f"verify:{interaction.user.id}",
@@ -141,6 +137,7 @@ class OTPModal(Modal):
     Modal dialog for OTP entry.
     Handles the verification process including role management and Redis operations.
     """
+
     def __init__(self):
         super().__init__(title="OTP Verification")
         self.code = TextInput(
@@ -163,7 +160,7 @@ class OTPModal(Modal):
                     "You are already verified!", ephemeral=True
                 )
                 return
-            
+
             # Validate OTP from Redis
             stored_data = await redis_client.get(f"verify:{interaction.user.id}")
             if not stored_data:
@@ -174,22 +171,26 @@ class OTPModal(Modal):
                 raise ValueError("Incorrect OTP")
 
             # Remove UnVerified Role
-            unverified_role = discord.utils.get(interaction.guild.roles, name="UnVerified")
+            unverified_role = discord.utils.get(
+                interaction.guild.roles, name="UnVerified"
+            )
 
             if not unverified_role:
                 raise ValueError("@UnVerified role not found")
 
             await interaction.user.remove_roles(unverified_role)
-            
+
             # Add Verified Role
             verified_role = discord.utils.get(interaction.guild.roles, name="Verified")
             if not verified_role:
                 raise ValueError("@Verified role not found")
 
             await interaction.user.add_roles(verified_role)
-            
+
             # Remove UnVerified Role
-            unverified_role = discord.utils.get(interaction.guild.roles, name="UnVerified")
+            unverified_role = discord.utils.get(
+                interaction.guild.roles, name="UnVerified"
+            )
 
             if not unverified_role:
                 raise ValueError("@UnVerified role not found")
@@ -279,13 +280,17 @@ async def verify(interaction: discord.Interaction):
         )
 
 
+email_modal = EmailModal()
+otp_modal = OTPModal()
+
+
 @discord_client.event
 async def on_interaction(interaction: discord.Interaction):
     if interaction.type == discord.InteractionType.component:
         if interaction.data["custom_id"] == "email_button":
-            await interaction.response.send_modal(EmailModal())
+            await interaction.response.send_modal(email_modal)
         elif interaction.data["custom_id"] == "otp_button":
-            await interaction.response.send_modal(OTPModal())
+            await interaction.response.send_modal(otp_modal)
 
 
 @discord_client.event
