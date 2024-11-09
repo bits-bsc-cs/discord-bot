@@ -247,9 +247,11 @@ class VerifyView(View):
                 Button(
                     label="Enter OTP",
                     custom_id="otp_button",
-                    style=discord.ButtonStyle.secondary
-                    if email
-                    else discord.ButtonStyle.primary,
+                    style=(
+                        discord.ButtonStyle.secondary
+                        if email
+                        else discord.ButtonStyle.primary
+                    ),
                 )
             )
 
@@ -280,17 +282,17 @@ async def verify(interaction: discord.Interaction):
         )
 
 
-email_modal = EmailModal()
-otp_modal = OTPModal()
+# email_modal = EmailModal()
+# otp_modal = OTPModal()
 
 
 @discord_client.event
 async def on_interaction(interaction: discord.Interaction):
     if interaction.type == discord.InteractionType.component:
         if interaction.data["custom_id"] == "email_button":
-            await interaction.response.send_modal(email_modal)
+            await interaction.response.send_modal(EmailModal())
         elif interaction.data["custom_id"] == "otp_button":
-            await interaction.response.send_modal(otp_modal)
+            await interaction.response.send_modal(OTPModal())
 
 
 @discord_client.event
