@@ -15,6 +15,8 @@ from upstash_redis.asyncio import Redis
 from upstash_ratelimit.asyncio import Ratelimit, FixedWindow
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
+from github_utils import invite_to_github, check_github_rate_limit
+from github_ui import GitHubUsernameModal
 
 # Load environment variables
 load_dotenv()
@@ -282,8 +284,39 @@ async def verify(interaction: discord.Interaction):
         )
 
 
-# email_modal = EmailModal()
-# otp_modal = OTPModal()
+@discord_client.tree.command()
+async def github_join(interaction: discord.Interaction):
+    """Join the GitHub organization for BITS CS students"""
+    await interaction.response.defer(ephemeral=True)
+    try:
+        # Check if user is verified
+        verified_role = discord.utils.get(interaction.guild.roles, name="Verified")
+        if not verified_role or verified_role not in interaction.user.roles:
+            logger.warning(f"User {interaction.user.id} attempted to join GitHub organization without verification")
+            await interaction.followup.send("You must be verified to join the GitHub organization.", ephemeral=True)
+            return
+
+        # Check rate limit
+        rate_limit_allowed = await check_github_rate_limit(str(interaction.user.id))
+        if not rate_limit_allowed:
+            logger.info(f"Rate limit exceeded for user {interaction.user.id}")
+            await interaction.followup.send(
+                "You've exceeded the rate limit for GitHub invitations (3 per 24 hours). Please try again later.",
+                ephemeral=True
+            )
+            return
+
+        # Show GitHub username modal
+        await interaction.followup.send("Please enter your GitHub username to receive an invitation.", ephemeral=True)
+        await interaction.followup.send_modal(GitHubUsernameModal())
+
+    except discord.errors.NotFound:
+        logger.error("Unknown interaction error occurred in github-join command")
+    except Exception as e:
+        logger.error(f"Error in github-join command: {str(e)}")
+        await interaction.followup.send(
+            "An error occurred. Please try again later.", ephemeral=True
+        )
 
 
 @discord_client.event
@@ -293,6 +326,8 @@ async def on_interaction(interaction: discord.Interaction):
             await interaction.response.send_modal(EmailModal())
         elif interaction.data["custom_id"] == "otp_button":
             await interaction.response.send_modal(OTPModal())
+        elif interaction.data["custom_id"] == "github_join_button":
+            await interaction.response.send_modal(GitHubUsernameModal())
 
 
 @discord_client.event
